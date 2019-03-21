@@ -36,7 +36,7 @@ using std::vector;
 
 #define MAX_NUM_LENGTH 80		//定义获取音频文件长度数量的最大值
 
-const wchar_t* VERSION = L"1.35";	//程序版本
+const wchar_t* VERSION = L"1.36";	//程序版本
 //const char* INI_PATH = ".\\config.ini";		//配置文件路径
 //const wchar_t* INI_PATH_W = L".\\config.ini";	//配置文件路径（宽字符）
 //const char* RECENT_FILE_PATH = ".\\recent_path.dat";	//最近播放路径文件的路径
