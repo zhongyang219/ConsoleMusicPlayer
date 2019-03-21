@@ -11,6 +11,9 @@ using std::string;
 using std::wstring;
 using std::vector;
 
+#include "bass.h"
+#pragma comment(lib,"bass.lib")
+
 #define UP_KEY (-1)			//定义上方向键
 #define DOWN_KEY (-2)		//定义下方向键
 #define LEFT_KEY (-3)		//定义左方向键
@@ -152,15 +155,16 @@ int operator-(SYSTEMTIME a, SYSTEMTIME b)
 int GetKey()
 {
 	int key{ _getch() };
-	if (key == 0xE0 || key == 0)		//如果获得的按键值为0x0E或0则表示按下了功能键
-	{
-		switch (_getch())		//按下了功能键需要再次调用_getch函数
+	if (key == 0xE0/* || key == 0*/)		//如果获得的按键值为0x0E或0则表示按下了功能键
+	{	
+		int key1 = _getch();		//按下了功能键需要再次调用_getch函数
+		switch (key1)
 		{
 			case 72: key = UP_KEY; break;
 			case 80: key = DOWN_KEY; break;
 			case 75: key = LEFT_KEY; break;
 			case 77: key = RIGHT_KEY; break;
-			default: break;
+			default: key = key1; break;
 		}
 	}
 	if (key >= 'a' && key <= 'z')		//如果按的是小写字母，则自动转换成大写字母

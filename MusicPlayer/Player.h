@@ -2,20 +2,20 @@
 //		本文件为播放器类的定义，为实现播放器的主要代码
 //************************************************************
 #pragma once
-#pragma comment (lib,"winmm.lib")
-#include <windows.h>
-#include <mmsystem.h>
+//#pragma comment (lib,"winmm.lib")
+//#include <windows.h>
+//#include <mmsystem.h>
 #include <string>
 #include <vector>
 #include<tuple>
 #include<deque>
 #include<iostream>
 #include<algorithm>
-#include <VersionHelpers.h>
 #include<iomanip>
 #include"Common.h"
 #include"Console.h"
 #include"Lyrics.h"
+#include "WinVersionHelper.h"
 using std::ofstream;
 using std::ifstream;
 using std::string;
@@ -29,6 +29,7 @@ const size_t PATH{ 0 }, TRACK{ 1 }, POSITION{ 2 };		//定义用于表示tuple<>�
 class CPlayer
 {
 private:
+	HSTREAM m_musicStream;
 	vector<wstring> m_playlist;		//播放列表，储存音乐文件的文件名
 	vector<Time> m_all_song_length;		//储存每个音乐文件的长度
 	wstring m_path;		//当前播放文件的路径
@@ -43,7 +44,7 @@ private:
 
 	int m_index{ 0 };	//当前播放音乐的序号
 	int m_song_num{ 0 };	//播放列表中的歌曲总数
-	MCIERROR m_error_code{ 0 };
+	int m_error_code{ 0 };
 	int m_playing{ 0 };		//正在播放标志（0：已停止，1：已暂停，2：正在播放）
 	int m_repeat_mode{ 0 };		//循环模式（0：顺序播放，1：随机播放，2：列表循环，3：单曲循环）
 	int m_volume{ 100 };		//音量（百分比）
@@ -67,6 +68,7 @@ private:
 
 	void IniPlayList(bool cmd_para = false);	//初始化播放列表(如果参数为true，表示从命令行直接获取歌曲文件，而不是从指定路径下搜索)
 	void IniConsole();		//初始化控制台
+	void IniBASS();
 
 	void ChangePath(const wstring& path, int track = 0);		//改变当前路径
 
@@ -101,6 +103,7 @@ public:
 	void SetPath();		//设置路径
 	void SetTrack();		//更改正在播放的歌曲
 	void SetRepeatMode();		//更改循环模式
+	void SeekTo(int position);
 
 	bool ErrorDispose();		//错误处理（已消除错误返回true，否则返回false）
 
@@ -127,6 +130,7 @@ inline CPlayer::CPlayer()
 
 inline void CPlayer::Create()
 {
+	IniBASS();
 	LoadConfig();
 	IniConsole();
 	LoadRecentPath();
@@ -137,6 +141,7 @@ inline void CPlayer::Create()
 
 inline void CPlayer::Create(const vector<wstring>& files)
 {
+	IniBASS();
 	LoadConfig();
 	IniConsole();
 	LoadRecentPath();
@@ -162,8 +167,7 @@ void CPlayer::IniConsole()
 	sprintf_s(buff, sizeof(buff), "mode con:cols=%d lines=%d", m_width, m_hight);
 	system(buff);		//设置窗口的宽度和高度
 	//系统在windows10以下时，在初始化时设置一个固定的缓冲区大小。
-	//（windows10可以根据窗口大小自动调整缓冲区大小。）
-	if (!IsWindows8OrGreater())
+	if (!CWinVersionHelper::IsWindows10OrLater())
 	{
 		COORD size{300, 80};
 		SetConsoleScreenBufferSize(handle, size);		//设置窗口缓冲区大小
@@ -183,11 +187,27 @@ void CPlayer::IniConsole()
 
 }
 
+inline void CPlayer::IniBASS()
+{
+	//初始化BASE音频库
+	BASS_Init(
+		-1,//默认设备
+		44100,//输出采样率44100（常用值）
+		BASS_DEVICE_CPSPEAKERS,//信号，BASS_DEVICE_CPSPEAKERS 注释原文如下：
+							   /* Use the Windows control panel setting to detect the number of speakers.*/
+							   /* Soundcards generally have their own control panel to set the speaker config,*/
+							   /* so the Windows control panel setting may not be accurate unless it matches that.*/
+							   /* This flag has no effect on Vista, as the speakers are already accurately detected.*/
+		NULL,//程序窗口,0用于控制台程序
+		NULL//类标识符,0使用默认值
+	);
+}
+
 void CPlayer::IniPlayList(bool cmd_para)
 {
 	if (!cmd_para)
 	{
-		vector<wstring> file_fromat{ L"mp3", L"wma", L"wav", L"mid" };
+		vector<wstring> file_fromat{ L"mp3", L"wma", L"wav", L"ogg" };
 		GetAllFormatFiles(m_path, m_playlist, file_fromat, 2997);
 	}
 	std::sort(m_playlist.begin(), m_playlist.end());		//对播放列表按名称排序
@@ -219,14 +239,11 @@ void CPlayer::IniPlayList(bool cmd_para)
 	for (int i{ start }; i < m_song_num && count < MAX_NUM_LENGTH; i++, count++)
 	{
 		m_current_file_name = m_playlist[i];
-		if (!FileIsMidi(m_current_file_name))		//不获取MIDI文件的长度（MIDI文件的长度在打开时获得）
-		{
-			//MusicControl(Command::OPEN);
-			m_error_code = mciSendStringW((L"open \"" + m_path + m_current_file_name + L"\"").c_str(), NULL, 0, 0);
-			GetSongLength();
-			m_all_song_length[i] = m_song_length;
-			MusicControl(Command::CLOSE);
-		}
+
+		m_musicStream = BASS_StreamCreateFile(FALSE, (m_path + m_current_file_name).c_str(), 0, 0, 0);
+		GetSongLength();
+		m_all_song_length[i] = m_song_length;
+		MusicControl(Command::CLOSE);
 	}
 
 	system("cls");
@@ -245,16 +262,13 @@ void CPlayer::IniLyrics()
 	lyric_path.replace(lyric_path.size() - 3, 3, L"lrc");		//将最后3个字符的扩展名替换成lrc
 	if (FileExist(lyric_path))
 	{
-		if (!FileIsMidi(m_current_file_name))		//当前歌曲不是midi音乐才初始化歌词
-			m_Lyrics = CLyrics{ lyric_path };
-		else
-			m_Lyrics = CLyrics{};
+		m_Lyrics = CLyrics{ lyric_path };
 	}
 	else		//当前目录下没有对应的歌词文件时，就在m_lyric_path目录下寻找歌词文件
 	{
 		lyric_path = m_lyric_path + m_current_file_name;
 		lyric_path.replace(lyric_path.size() - 3, 3, L"lrc");
-		if(!FileIsMidi(m_current_file_name) && FileExist(lyric_path))
+		if(FileExist(lyric_path))
 			m_Lyrics = CLyrics{ lyric_path };
 		else
 			m_Lyrics = CLyrics{};
@@ -263,68 +277,55 @@ void CPlayer::IniLyrics()
 
 void CPlayer::MusicControl(Command command)
 {
-	wchar_t buff[16];
+	//wchar_t buff[16];
 	switch (command)
 	{
 	case Command::OPEN: 
-		m_error_code = mciSendStringW((L"open \"" + m_path + m_current_file_name + L"\"").c_str(), NULL, 0, 0);
-		//为了能播放路径中有空格的文件，在路径的前后各加上一个双引号
-		//GetCurrentPosition();
+		m_error_code = 0;
+		m_musicStream = BASS_StreamCreateFile(FALSE, (m_path + m_current_file_name).c_str(), 0, 0, 0);
 		GetSongLength();
 		if (m_song_num > 0) m_all_song_length[m_index] = m_song_length;		//打开文件后再次将获取的文件长度保存到m_all_song_length容器中
 		break;
-	case Command::PLAY: m_error_code = mciSendStringW((L"play \"" + m_path + m_current_file_name + L"\"").c_str(), NULL, 0, 0); m_playing = 2; break;
-	case Command::CLOSE: m_error_code = mciSendStringW((L"close \"" + m_path + m_current_file_name + L"\"").c_str(), NULL, 0, 0); m_playing = 0; break;
-	case Command::PAUSE: m_error_code = mciSendStringW((L"pause \"" + m_path + m_current_file_name + L"\"").c_str(), NULL, 0, 0); m_playing = 1; break;
+	case Command::PLAY: BASS_ChannelPlay(m_musicStream, FALSE); m_playing = 2; break;
+	case Command::CLOSE: BASS_StreamFree(m_musicStream); m_playing = 0; break;
+	case Command::PAUSE: BASS_ChannelPause(m_musicStream); m_playing = 1; break;
 	case Command::STOP:
-		m_error_code = mciSendStringW((L"stop \"" + m_path + m_current_file_name + L"\"").c_str(), NULL, 0, 0);
+		BASS_ChannelStop(m_musicStream);
 		m_playing = 0;
-		m_error_code = mciSendStringW((L"seek \"" + m_path + m_current_file_name + L"\" to 0").c_str(), NULL, 0, 0);		//停止后定位到0位置
-		GetCurrentPosition();
+		SeekTo(0);		//停止后定位到0位置
+		//GetCurrentPosition();
 		break;
+
 	case Command::FF:		//快进
 		GetCurrentPosition();		//获取当前位置（毫秒）
-		if (!FileIsMidi(m_current_file_name))
-		{
-			m_current_position_int += 5000;		//不是MIDI音乐时每次快进5000毫秒
-			if (m_current_position_int > m_song_length_int) m_current_position_int -= 5000;
-		}
-		else
-		{
-			m_current_position_int += 30;		//MIDI音乐时每次快进30个位置
-			if (m_current_position_int > m_song_length_int) m_current_position_int -= 30;
-		}
-		_itow_s(m_current_position_int, buff, 10);
-		m_error_code = mciSendStringW((L"seek \"" + m_path + m_current_file_name + L"\" to " + buff).c_str(), NULL, 0, 0);		//定位到新的位置
-		if (m_playing == 2)
-			m_error_code = mciSendStringW((L"play \"" + m_path + m_current_file_name + L"\"").c_str(), NULL, 0, 0);		//继续播放
+		m_current_position_int += 5000;		//每次快进5000毫秒
+		if (m_current_position_int > m_song_length_int)
+			m_current_position_int -= 5000;
+		SeekTo(m_current_position_int);
 		break;
+
 	case Command::REW:		//快退
 		GetCurrentPosition();		//获取当前位置（毫秒）
-		if (!FileIsMidi(m_current_file_name))
-			m_current_position_int -= 5000;		//不是MIDI音乐时每次快退5000毫秒
-		else
-			m_current_position_int -= 30;		//MIDI音乐时每次快退30个位置
-		if(m_current_position_int < 0) m_current_position_int = 0;		//防止快退到负的位置
-		_itow_s(m_current_position_int, buff, 10);
-		m_error_code = mciSendStringW((L"seek \"" + m_path + m_current_file_name + L"\" to " + buff).c_str(), NULL, 0, 0);		//定位到新的位置
-		if (m_playing == 2)
-			m_error_code = mciSendStringW((L"play \"" + m_path + m_current_file_name + L"\"").c_str(), NULL, 0, 0);		//继续播放
+		m_current_position_int -= 5000;		//每次快退5000毫秒
+		if (m_current_position_int < 0)
+			m_current_position_int = 0;		//防止快退到负的位置
+		SeekTo(m_current_position_int);
 		break;
+
 	case Command::PLAY_PAUSE:
 		if (m_playing == 2)
 		{
-			m_error_code = mciSendStringW((L"pause \"" + m_path + m_current_file_name + L"\"").c_str(), NULL, 0, 0);
+			BASS_ChannelPause(m_musicStream);
 			m_playing = 1;
 		}
 		else
 		{
-			m_error_code = mciSendStringW((L"play \"" + m_path + m_current_file_name + L"\"").c_str(), NULL, 0, 0);
+			BASS_ChannelPlay(m_musicStream, FALSE);
 			m_playing = 2;
 		}
 		break;
 	case Command::VOLUME_UP:
-		if (m_volume < 100 && !FileIsMidi(m_current_file_name))		//如果播放的是midi音乐则不允许调整音量（MCI不支持调整MIDI音乐的音量）
+		if (m_volume < 100)
 		{
 			m_volume+=2;
 			SetVolume();
@@ -332,7 +333,7 @@ void CPlayer::MusicControl(Command command)
 		}
 		break;
 	case Command::VOLUME_DOWN:
-		if (m_volume > 0 && !FileIsMidi(m_current_file_name))
+		if (m_volume > 0)
 		{
 			m_volume-=2;
 			SetVolume();
@@ -345,8 +346,7 @@ void CPlayer::MusicControl(Command command)
 			m_current_position_int = 0;
 			m_current_position = Time{ 0, 0, 0 };
 		}
-		_itow_s(m_current_position_int, buff, 10);
-		m_error_code = mciSendStringW((L"seek \"" + m_path + m_current_file_name + L"\" to " + buff).c_str(), NULL, 0, 0);		//定位到新的位置
+		SeekTo(m_current_position_int);
 		break;
 	default: break;
 	}
@@ -354,25 +354,36 @@ void CPlayer::MusicControl(Command command)
 
 bool CPlayer::SongIsOver() const
 {
-	//GetCurrentPosition();
-	if (m_song_length_int > m_current_position_int)
-		return false;
-	else return true;
+	bool song_is_over;
+	static int last_pos;
+	if (m_playing == 2 && m_current_position_int == last_pos && m_current_position_int != 0
+		&& m_current_position_int > m_song_length_int - 1000)	//如果正在播放且当前播放的位置没有发生变化，则判断当前歌曲播放完了
+		song_is_over = true;
+	else
+		song_is_over = false;
+	last_pos = m_current_position_int;
+	return song_is_over;
 }
 
 void CPlayer::GetSongLength()
 {
-	wchar_t buff[16];
-	m_error_code = mciSendStringW((L"status \"" + m_path + m_current_file_name + L"\" length").c_str(), buff, 15, 0);		//获取当前歌曲的长度，并储存在buff数组里
-	m_song_length_int = _wtoi(buff);		//将获得的长度转换成int类型
+	QWORD lenght_bytes;
+	lenght_bytes = BASS_ChannelGetLength(m_musicStream, BASS_POS_BYTE);
+	double length_sec;
+	length_sec = BASS_ChannelBytes2Seconds(m_musicStream, lenght_bytes);
+	m_song_length_int = static_cast<int>(length_sec * 1000);
+	if (m_song_length_int == -1000) m_song_length_int = 0;
 	m_song_length = int2time(m_song_length_int);		//将长度转换成Time结构
 }
 
 void CPlayer::GetCurrentPosition()
 {
-	wchar_t buff[16];
-	m_error_code = mciSendStringW((L"status \"" + m_path + m_current_file_name + L"\" position").c_str(), buff, 15, 0);
-	m_current_position_int = _wtoi(buff);
+	QWORD pos_bytes;
+	pos_bytes = BASS_ChannelGetPosition(m_musicStream, BASS_POS_BYTE);
+	double pos_sec;
+	pos_sec = BASS_ChannelBytes2Seconds(m_musicStream, pos_bytes);
+	m_current_position_int = static_cast<int>(pos_sec * 1000);
+	if (m_current_position_int == -1000) m_current_position_int = 0;
 	m_current_position = int2time(m_current_position_int);
 }
 
@@ -388,20 +399,26 @@ void CPlayer::GetCurrentPosition()
  
 void CPlayer::SetVolume()
 {
-	wchar_t buff[16];
-	_itow_s(m_volume*10, buff, 10);		//设置音量100%时为1000
-	m_error_code = mciSendStringW((L"setaudio \"" + m_path + m_current_file_name + L"\" volume to " + buff).c_str(), NULL, 0, 0);
+	float volume = static_cast<float>(m_volume) / 100.0f;
+	BASS_ChannelSetAttribute(m_musicStream, BASS_ATTRIB_VOL, volume);
 }
  
 void CPlayer::ShowInfo() const
 {
 	//显示播放状态
 	int song_name_length{ m_width - 25 };		//歌曲标题显示的半角字符数
-	switch (m_playing)
+	if (m_error_code || m_musicStream == 0)
 	{
-	case 1: PrintWString(L"已暂停  ", 0, 0, WHITE); break;
-	case 2: PrintWString(L"正在播放", 0, 0, WHITE); break;
-	default: PrintWString(L"已停止  ", 0, 0, WHITE); break;
+		PrintWString(L"播放出错", 0, 0, WHITE);
+	}
+	else
+	{
+		switch (m_playing)
+		{
+		case 1: PrintWString(L"已暂停  ", 0, 0, WHITE); break;
+		case 2: PrintWString(L"正在播放", 0, 0, WHITE); break;
+		default: PrintWString(L"已停止  ", 0, 0, WHITE); break;
+		}
 	}
 	ClearString(14, 0, song_name_length);		//清除标题处的字符
 	//显示正在播放的歌曲序号
@@ -470,21 +487,14 @@ void CPlayer::ShowProgressBar() const
 	PrintWString(progress_bar.c_str(), progress_bar_start, 2, pos + 1, PURPLE, DARK_PURPLE);
 
 	//显示>>>>
-	int i;
-	if (!FileIsMidi(m_current_file_name))
-		i = m_current_position.sec % 4 + 1;
-	else
-		i = m_current_position_int / 4 % 4 + 1;
+	int i = m_current_position.sec % 4 + 1;
 
 	if (m_playing == 0) i = 0;
 	PrintWString(L">>>>", 0, 2, i, GREEN, GRAY);
 
 	//显示歌曲时间
 	wchar_t buff[15];
-	if (!FileIsMidi(m_current_file_name))		//播放的不是MIDI音乐时显示时间的分钟数和秒数
-		swprintf_s(buff, sizeof(buff)/2, L"%d:%.2d/%d:%.2d", m_current_position.min, m_current_position.sec, m_song_length.min, m_song_length.sec);
-	else		//播放MIDI音乐时显示位置
-		swprintf_s(buff, sizeof(buff)/2, L"%d/%d", m_current_position_int, m_song_length_int);
+	swprintf_s(buff, sizeof(buff)/2, L"%d:%.2d/%d:%.2d", m_current_position.min, m_current_position.sec, m_song_length.min, m_song_length.sec);
 	ClearString(m_width - 12, 2, 12);
 	PrintWString(buff, m_width - 12, 2, DARK_YELLOW);
 }
@@ -513,10 +523,7 @@ void CPlayer::ShowPlaylist() const
 		{
 			PrintInt(index + 1, x + 2, y + 2 + i, GRAY);		//输出序号
 			PrintWString(m_playlist[index].c_str(), x + 6, y + 2 + i, playlist_width - 13, WHITE);		//输出文件名（最多只输出playlist_width - 13个字符）
-			if (!FileIsMidi(m_playlist[index]))
-				swprintf_s(buff, sizeof(buff)/2, L"%d:%.2d", m_all_song_length[index].min, m_all_song_length[index].sec);
-			else
-				swprintf_s(buff, sizeof(buff)/2, L"%d", time2int(m_all_song_length[index]));		//midi音乐的长度只能用int型表示
+			swprintf_s(buff, sizeof(buff)/2, L"%d:%.2d", m_all_song_length[index].min, m_all_song_length[index].sec);
 			if (m_all_song_length[index] > Time{0, 0, 0})
 				PrintWString(buff, m_width - 6, y + 2 + i, DARK_YELLOW);		//输出音频文件长度
 			else
@@ -695,10 +702,7 @@ void CPlayer::SwitchPlaylist(int operation)
 
 int CPlayer::GetCurrentSecond()
 {
-	//GetCurrentPosition();
-	if (!FileIsMidi(m_current_file_name))
-		return m_current_position.sec;		//不是midi音乐时每1秒钟刷新
-	else return m_current_position_int / 4;		//midi音乐时每4个位置刷新
+	return m_current_position.sec;
 }
 
 inline bool CPlayer::IsPlaying() const
@@ -942,8 +946,21 @@ void CPlayer::SetRepeatMode()
 	SaveConfig();
 }
 
+inline void CPlayer::SeekTo(int position)
+{
+	if (position > m_song_length_int)
+		position = m_song_length_int;
+	m_current_position_int = position;
+	m_current_position = int2time(position);
+	double pos_sec = static_cast<double>(position) / 1000.0;
+	QWORD pos_bytes;
+	pos_bytes = BASS_ChannelSeconds2Bytes(m_musicStream, pos_sec);
+	BASS_ChannelSetPosition(m_musicStream, pos_bytes, BASS_POS_BYTE);
+}
+
 bool CPlayer::ErrorDispose()
 {
+	m_error_code = BASS_ErrorGetCode();
 	if (m_song_num==0)
 	{
 		PrintWString(L"当前路径下没有音频文件，请按任意键重新设置文件路径。", 0, 2, DARK_WHITE);
@@ -954,26 +971,17 @@ bool CPlayer::ErrorDispose()
 		if (m_error_code) return false;
 		else return true;
 	}
-	
-	wchar_t error_info[64];
-	if (m_error_code)
+	else if (m_musicStream == 0)
 	{
-		mciGetErrorStringW(m_error_code, error_info, sizeof(error_info) / 2);		//根据错误代码获取错误信息，并储存在error_info字符数组中
-		PrintWString(L"错误：", 0, 2, DARK_WHITE);
-		PrintWString(error_info, 6, 2, DARK_WHITE);		//输出错误信息
-		system("pause");
-		switch (m_error_code)
-		{
-		case 263:				//出现“指定的设备未打开，或不被 MCI 所识别。”错误，可能是路径不正确
-			PrintWString(L"出现错误，是否重新设置路径？是(Y)|否(N)", 0, 2, RED);
-			if (GetKey() == 'Y')
-				SetPath();				//重新设置路径
-			break;
-		default:
-			break;
-		}
-		// if (m_error_code) return false;
-		// else return true;
+		PrintWString(L"当前文件无法播放", 0, 2, DARK_WHITE);
+		return true;
+	}
+
+	else if (m_error_code)
+	{
+		wchar_t error_info[64];
+		swprintf_s(error_info, L"出现了错误：错误代码：%d", m_error_code);
+		PrintWString(error_info, 0, 2, DARK_WHITE);
 	}
 	return true;
 }

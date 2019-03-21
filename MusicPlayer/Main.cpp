@@ -3,7 +3,7 @@
 //************************************************************
 #include "Player.h"
 #include<iostream>
-#include <VersionHelpers.h>		//用于判断当前Windows的版本
+#include "WinVersionHelper.h"
 #pragma comment (lib,"User32.lib")	//用于使用SendMessage和LoadIcon函数
 
 //宽字节版的main函数，从参数传递wchar_t*类型的字符串，使其可以通过命令行打开文件名带Unicode字符的文件
@@ -111,8 +111,7 @@ int wmain(int argc, wchar_t* argv[])
 				//如果系统是windows10，宽度改变后重新将控制台缓冲区大小设置为窗口大小，可以使控制台窗口大小调整后不会显示滚动条。
 				//而Windws10以下的系统无法通过改变窗口大小来改变缓冲区大小，这样会导致窗口调小后无法调大，所以不应该在
 				//改变窗口大小的时候重设缓冲区大小。
-				//（VS2013没有判断win10以上的函数，这里用win8以上代替，用以区别win7）
-				if (IsWindows8OrGreater())
+				if (CWinVersionHelper::IsWindows10OrLater())
 				{
 					char buff[32];
 					sprintf_s(buff, 31, "mode con:cols=%d lines=%d", width_t, hight_t);
@@ -131,7 +130,7 @@ int wmain(int argc, wchar_t* argv[])
 			else
 			{
 				//windows10
-				if (IsWindows8OrGreater())
+				if (CWinVersionHelper::IsWindows10OrLater())
 				{
 					char buff[32];
 					if (width_t < MIN_WIDTH && hight_t >= MIN_HIGHT)		//只有宽度小于最小宽度
