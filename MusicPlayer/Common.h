@@ -233,41 +233,67 @@ inline void WritePrivateProfileIntW(const wchar_t* AppName, const wchar_t* KeyNa
 //将string类型的字符串转换成Unicode编码的wstring字符串
 wstring StrToUnicode(const string& str, CodeType code_type)
 {
-	wchar_t str_unicode[256]{ 0 };
-	int max{ 0 };
+	wstring result;
+	int size{ 0 };
 	if (code_type == CodeType::ANSI)
 	{
-		max = MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, NULL, 0);
-		if (max > 255) max = 255;
-		MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, str_unicode, max);
+		size = MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, NULL, 0);
+		if (size <= 0) return wstring();
+		wchar_t* str_unicode = new wchar_t[size + 1];
+		MultiByteToWideChar(CP_ACP, 0, str.c_str(), -1, str_unicode, size);
+		result.assign(str_unicode);
+		delete[] str_unicode;
 	}
 	else
 	{
-		max = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, NULL, 0);
-		if (max > 255) max = 255;
-		MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, str_unicode, max);
+		string temp;
+		//如果前面有BOM，则去掉BOM
+		if (str.size() >= 3 && str[0] == -17 && str[1] == -69 && str[2] == -65)
+			temp = str.substr(3);
+		else
+			temp = str;
+		size = MultiByteToWideChar(CP_UTF8, 0, temp.c_str(), -1, NULL, 0);
+		if (size <= 0) return wstring();
+		wchar_t* str_unicode = new wchar_t[size + 1];
+		MultiByteToWideChar(CP_UTF8, 0, temp.c_str(), -1, str_unicode, size);
+		result.assign(str_unicode);
+		delete[] str_unicode;
 	}
-	return wstring{ str_unicode };
+	return result;
 }
 
 //将Unicode编码的wstring字符串转换成string类型的字符串
 string UnicodeToStr(const wstring& wstr, CodeType code_type)
 {
-	char str[256]{ 0 };
-	int max{ 0 };
+	if (wstr.empty()) return string();
+	string result;
+	int size{ 0 };
 	if (code_type == CodeType::ANSI)
 	{
-		max = WideCharToMultiByte(CP_ACP, 0, wstr.c_str(), -1, NULL, 0, NULL, NULL);
-		if (max > 255) max = 255;
-		WideCharToMultiByte(CP_ACP, 0, wstr.c_str(), -1, str, max, NULL, NULL);
+		size = WideCharToMultiByte(CP_ACP, 0, wstr.c_str(), -1, NULL, 0, NULL, NULL);
+		if (size <= 0) return string();
+		char* str = new char[size + 1];
+		WideCharToMultiByte(CP_ACP, 0, wstr.c_str(), -1, str, size, NULL, NULL);
+		result.assign(str);
+		delete[] str;
 	}
 	else
 	{
-		max = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, NULL, 0, NULL, NULL);
-		if (max > 255) max = 255;
-		WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, str, max, NULL, NULL);
+		result.clear();
+		if (code_type == CodeType::UTF8)
+		{
+			result.push_back(-17);
+			result.push_back(-69);
+			result.push_back(-65);
+		}
+		size = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, NULL, 0, NULL, NULL);
+		if (size <= 0) return string();
+		char* str = new char[size + 1];
+		WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, str, size, NULL, NULL);
+		result.append(str);
+		delete[] str;
 	}
-	return string{ str };
+	return result;
 }
 
 //判断一个字符串是否UTF8编码
