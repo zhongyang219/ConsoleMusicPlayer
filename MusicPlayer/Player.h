@@ -995,10 +995,10 @@ inline void CPlayer::SetTitle() const
 
 void CPlayer::SaveConfig() const
 {
-	WritePrivateProfileStringW(L"config",L"path", m_path.c_str(), m_config_path.c_str());
-	WritePrivateProfileIntW(L"config",L"track", m_index, m_config_path.c_str());
+	//WritePrivateProfileStringW(L"config",L"path", m_path.c_str(), m_config_path.c_str());
+	//WritePrivateProfileIntW(L"config",L"track", m_index, m_config_path.c_str());
 	WritePrivateProfileIntW(L"config", L"volume", m_volume, m_config_path.c_str());
-	WritePrivateProfileIntW(L"config", L"position", m_current_position_int, m_config_path.c_str());
+	//WritePrivateProfileIntW(L"config", L"position", m_current_position_int, m_config_path.c_str());
 	WritePrivateProfileIntW(L"config", L"repeat_mode", m_repeat_mode, m_config_path.c_str());
 	WritePrivateProfileIntW(L"config", L"window_width", m_width, m_config_path.c_str());
 	WritePrivateProfileIntW(L"config", L"window_hight", m_hight, m_config_path.c_str());
