@@ -92,6 +92,7 @@ int wmain(int argc, wchar_t* argv[])
 			case ESC_KEY:
 				//my_player.GetConsoleSetting();
 				my_player.SaveConfig();
+				my_player.SaveRecentPath();
 				return 0;
 			}
 			my_player.ShowInfo();

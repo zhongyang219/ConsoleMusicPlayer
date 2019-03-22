@@ -73,10 +73,12 @@ private:
 	void ChangePath(const wstring& path, int track = 0);		//改变当前路径
 
 	void LoadRecentPath();		//从文件载入最近路径列表
-	void SaveRecentPath() const;		//将最近路径列表保存到文件
 	void EmplaceCurrentPathToRecent();		//将当前路径插入到最近路径中
 
 	void FindFile(const wstring& key_word);		//根据参数中的关键字查找文件，将结果保存在m_find_result中
+
+public:
+	void SaveRecentPath() const;		//将最近路径列表保存到文件
 
 public:
 	CPlayer();
@@ -1008,14 +1010,14 @@ void CPlayer::SaveConfig() const
 void CPlayer::LoadConfig()
 {
 	wchar_t buff[256];
-	GetPrivateProfileStringW(L"config",L"path", L".\\songs\\", buff, 255, m_config_path.c_str());
-	m_path = buff;
-	if(m_path.back() != L'/' && m_path.back() !=L'\\')		//如果读取到的新路径末尾没有斜杠，则在末尾加上一个
-		m_path.append(1, L'\\');
-	m_index = GetPrivateProfileIntW(L"config",L"track", 0, m_config_path.c_str());
+	//GetPrivateProfileStringW(L"config",L"path", L".\\songs\\", buff, 255, m_config_path.c_str());
+	//m_path = buff;
+	//if(m_path.back() != L'/' && m_path.back() !=L'\\')		//如果读取到的新路径末尾没有斜杠，则在末尾加上一个
+	//	m_path.append(1, L'\\');
+	//m_index = GetPrivateProfileIntW(L"config",L"track", 0, m_config_path.c_str());
 	m_volume = GetPrivateProfileIntW(L"config", L"volume", 100, m_config_path.c_str());
-	m_current_position_int = GetPrivateProfileIntW(L"config", L"position", 0, m_config_path.c_str());
-	m_current_position = int2time(m_current_position_int);
+	//m_current_position_int = GetPrivateProfileIntW(L"config", L"position", 0, m_config_path.c_str());
+	//m_current_position = int2time(m_current_position_int);
 	m_repeat_mode = GetPrivateProfileIntW(L"config", L"repeat_mode", 0, m_config_path.c_str());
 	m_width = GetPrivateProfileIntW(L"config", L"window_width", 80, m_config_path.c_str());
 	m_hight = GetPrivateProfileIntW(L"config", L"window_hight", 25, m_config_path.c_str());
@@ -1210,6 +1212,23 @@ void CPlayer::LoadRecentPath()
 		m_recent_path.push_back(std::make_tuple(path, track, position));
 	}
 	OpenFile.close();
+
+	//从recent_path文件中获取路径、播放到的曲目和位置
+	if (!m_recent_path.empty())
+	{
+		m_path = std::get<PATH>(m_recent_path[0]);
+		if (!m_path.empty() && m_path.back() != L'/' && m_path.back() != L'\\')		//如果读取到的新路径末尾没有斜杠，则在末尾加上一个
+			m_path.push_back(L'\\');
+
+		m_index = std::get<TRACK>(m_recent_path[0]);
+		m_current_position_int = std::get<POSITION>(m_recent_path[0]);
+		m_current_position = int2time(m_current_position_int);
+	}
+	else
+	{
+		m_path = L".\\songs\\";		//默认的路径
+	}
+
 }
 
 void CPlayer::EmplaceCurrentPathToRecent()
