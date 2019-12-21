@@ -840,7 +840,7 @@ void CPlayer::SetPath()
 
 	while (true)
 	{
-		swprintf_s(buff, sizeof(buff) / 2, L"共%d个", m_recent_path.size());
+		swprintf_s(buff, sizeof(buff) / 2, L"共%d个", static_cast<int>(m_recent_path.size()));
 		PrintWString(buff, 9, y, DARK_WHITE);
 		max_selection = m_recent_path.size() + 1;
 		if (max_selection > hight - 3) max_selection = hight - 3;
@@ -1074,13 +1074,13 @@ void CPlayer::Find()
 			if (find_flag)
 			{
 				PrintWString(L"查找结果：", x, y + 2, GREEN);
-				swprintf_s(buff, sizeof(buff) / 2, L"(共%d个结果)", m_find_result.size());
+				swprintf_s(buff, sizeof(buff) / 2, L"(共%d个结果)", static_cast<int>(m_find_result.size()));
 				PrintWString(buff, x + 10, y + 2, GRAY);
 			}
 			else
 			{
 				PrintWString(L"上次的查找结果：", x, y + 2, GREEN);
-				swprintf_s(buff, sizeof(buff) / 2, L"(共%d个结果)", m_find_result.size());
+				swprintf_s(buff, sizeof(buff) / 2, L"(共%d个结果)", static_cast<int>(m_find_result.size()));
 				PrintWString(buff, x + 16, y + 2, GRAY);
 			}
 			for (int i{ 0 }; i < max_selection; i++)

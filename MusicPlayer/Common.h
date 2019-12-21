@@ -12,7 +12,6 @@ using std::wstring;
 using std::vector;
 
 #include "bass.h"
-#pragma comment(lib,"bass.lib")
 
 #define UP_KEY (-1)			//定义上方向键
 #define DOWN_KEY (-2)		//定义下方向键
@@ -176,7 +175,7 @@ int GetKey()
 void GetAllFormatFiles(wstring path, vector<wstring>& files, const vector<wstring>& format, size_t max_file = 99999)
 {
 	//文件句柄 
-	int hFile = 0;
+    intptr_t hFile = 0;
 	//文件信息（用Unicode保存使用_wfinddata_t，多字节字符集使用_finddata_t）
 	_wfinddata_t fileinfo;
 	wstring file_path;
