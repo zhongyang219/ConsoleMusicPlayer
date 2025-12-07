@@ -563,7 +563,7 @@ void CPlayer::ShowLyricsSingleLine() const
 	if (!m_Lyrics.IsEmpty())
 	{
 		static wstring last_lyric;
-		wstring current_lyric{ m_Lyrics.GetLyric(m_current_position, 0) };		//获取当前歌词
+		wstring current_lyric{ m_Lyrics.GetLyric(m_current_position, 0).text };		//获取当前歌词
 		if (current_lyric != last_lyric)
 		{
 			last_lyric = current_lyric;
@@ -608,18 +608,23 @@ void CPlayer::ShowLyricsSingleLine() const
 
 void CPlayer::ShowLyricsMultiLine(bool force_refresh) const
 {
-	int x{ 0 }, y{ 4 };			//歌词界面的起始x和y坐标
-	int lyric_width{ m_width / 2 - 1 };		//歌词显示的宽度
-	int lyric_hight{ m_hight - 6 };		//歌词显示的高度
-	int lyric_x;		//每一句歌词输出时的起始x坐标
-	wstring lyric_text;		//储存每一句歌词文本
+	int x{ 0 }, y{ 4 };            //歌词界面的起始x和y坐标
+	int lyric_width{ m_width / 2 - 1 };        //歌词显示的宽度
+	int lyric_hight{ m_hight - 6 };        //歌词显示的高度
+	int lyric_x;        //每一句歌词输出时的起始x坐标
+	wstring lyric_text;        //储存每一句歌词文本
+	wstring lyric_translate;    //储存歌词翻译文本
 	static bool lyric_change_flag{ true };
-	if(lyric_change_flag || force_refresh) PrintWString(L"歌词秀：", x, y, GREEN);
+
+	if (lyric_change_flag || force_refresh)
+		PrintWString(L"歌词秀：", x, y, GREEN);
+
 	if (!m_Lyrics.IsEmpty())
 	{
 		static int last_lyric_index;
-		int current_lyric_index{ m_Lyrics.GetLyricIndex(m_current_position) };		//获取当前歌词编号
-		if (current_lyric_index != last_lyric_index)				//如果当前歌词变了，就将歌词区域全部清除
+		int current_lyric_index{ m_Lyrics.GetLyricIndex(m_current_position) };        //获取当前歌词编号
+
+		if (current_lyric_index != last_lyric_index)                //如果当前歌词变了，就将歌词区域全部清除
 		{
 			lyric_change_flag = true;
 			last_lyric_index = current_lyric_index;
@@ -631,55 +636,110 @@ void CPlayer::ShowLyricsMultiLine(bool force_refresh) const
 			lyric_change_flag = false;
 		}
 
-		//for (int i{ -lyric_hight / 2 + 1 }; i <= lyric_hight / 2; i++)
-		for (int i{ -lyric_hight / 2 + 1 }; i + lyric_hight / 2 <= lyric_hight; i++)
-		{
-			lyric_text = m_Lyrics.GetLyric(m_current_position, i);
-			if (lyric_text == L"……") lyric_text.clear();		//多行模式下不显示省略号
-			lyric_x = lyric_width / 2 - WcharStrHalfWidthLen(lyric_text.c_str()) / 2;
-			if (lyric_x < 0) lyric_x = 0;
-			if (i != 0)		//不是当前歌词，以暗色显示
-			{
-				if (lyric_change_flag || force_refresh)			//不是当前歌词只有当前歌词变化了或参数要求强制刷新时才刷新，以避免反复刷新歌词，减少闪烁
-					PrintWString(lyric_text.c_str(), lyric_x, y + lyric_hight / 2 + i, lyric_width, DARK_CYAN);
+		// 重新设计显示逻辑：每一句歌词可能占用1行或2行（有翻译时）
+		// 我们需要计算显示区域中的歌词索引
+		int max_lines = lyric_hight;  // 最大可用行数
+		int current_line_offset = 0;  // 当前显示行相对于中心位置的偏移
+
+		// 从当前歌词向上寻找，确定显示区域中的第一句歌词
+		int start_index = current_lyric_index;
+		int lines_used = 0;
+
+		// 计算向上需要多少行
+		if (start_index >= 0) {
+			// 向上遍历直到填满上半部分或到开头
+			for (int i = start_index; i >= 0 && lines_used < max_lines / 2; i--) {
+				CLyrics::Lyric lyric = m_Lyrics.GetLyric(i);
+				lines_used++;  // 至少占用一行（原文）
+				if (!lyric.translate.empty()) {
+					lines_used++;  // 有翻译则多占一行
+				}
+				start_index = i;  // 更新起始索引
 			}
-			else		//i=0时为当前歌词
-			{
-				int lyric_progress{ static_cast<int>(m_Lyrics.GetLyricProgress(m_current_position)*(WcharStrHalfWidthLen(lyric_text.c_str()) + 1) / 1000) };		//歌词进度
-				int lrc_start, lrc_start_half_width;
-				if (WcharStrHalfWidthLen(lyric_text.c_str()) <= lyric_width)		//当前歌词宽度小于歌词显示宽度时直接显示
-				{
-					PrintWString(lyric_text.c_str(), lyric_x, y + lyric_hight / 2 + i, lyric_progress, CYAN, DARK_CYAN);
-				}
-				else		//当前歌词宽度大于歌词显示宽度时滚动显示
-				{
-					lyric_text.append(L" ");		//在歌词末尾加上一个空格，用于解决有时歌词最后一个字符无法显示的问题
-					wstring temp;
-					if (lyric_progress < lyric_width / 2)		//当前歌词进度小于歌词显示宽度一半时，当前歌词从第0个字符开始显示
+		}
+
+		// 重新开始显示，从start_index开始向下显示
+		int display_line = 0;  // 实际显示的行数（从0开始）
+		bool current_lyric_found = false;
+
+		for (int i = start_index; display_line < max_lines && i < m_Lyrics.GetCount(); i++) {
+			CLyrics::Lyric cur_lyric = m_Lyrics.GetLyric(i);
+			lyric_text = cur_lyric.text;
+			lyric_translate = cur_lyric.translate;
+
+			if (lyric_text == L"……") lyric_text.clear();        //多行模式下不显示省略号
+
+			bool is_current_lyric = (i == current_lyric_index);
+
+			// 显示歌词原文
+			if (!lyric_text.empty()) {
+				lyric_x = lyric_width / 2 - WcharStrHalfWidthLen(lyric_text.c_str()) / 2;
+				if (lyric_x < 0) lyric_x = 0;
+
+				if (is_current_lyric) {
+					// 当前歌词：高亮显示
+					int lyric_progress{ static_cast<int>(m_Lyrics.GetLyricProgress(m_current_position) * (WcharStrHalfWidthLen(lyric_text.c_str()) + 1) / 1000) };        //歌词进度
+					int lrc_start, lrc_start_half_width;
+
+					if (WcharStrHalfWidthLen(lyric_text.c_str()) <= lyric_width)        //当前歌词宽度小于歌词显示宽度时直接显示
 					{
-						lrc_start = 0;
-						lrc_start_half_width = 0;
+						PrintWString(lyric_text.c_str(), lyric_x, y + display_line + 1, lyric_progress, CYAN, DARK_CYAN);
 					}
-					else		//当前歌词进度大于等于控制台宽度一半时，需要计算当前歌词从第几个字符开始显示
+					else        //当前歌词宽度大于歌词显示宽度时滚动显示
 					{
-						lrc_start = lyric_progress - lyric_width / 2;
-						if (lrc_start > WcharStrHalfWidthLen(lyric_text.c_str()) - lyric_width) lrc_start = WcharStrHalfWidthLen(lyric_text.c_str()) - lyric_width;
-						lrc_start_half_width = lrc_start;
-						//此时得到的lrc_start是以半角字符为单位，下面一行代码用于计算实际lrc_start的值
-						//用lrc_start减去lrc_start位置前面的全角字符数
-						lrc_start = lrc_start - FullWidthCount(lyric_text.c_str(), lrc_start);
+						lyric_text.append(L" ");        //在歌词末尾加上一个空格，用于解决有时歌词最后一个字符无法显示的问题
+						wstring temp;
+						if (lyric_progress < lyric_width / 2)        //当前歌词进度小于歌词显示宽度一半时，当前歌词从第0个字符开始显示
+						{
+							lrc_start = 0;
+							lrc_start_half_width = 0;
+						}
+						else        //当前歌词进度大于等于控制台宽度一半时，需要计算当前歌词从第几个字符开始显示
+						{
+							lrc_start = lyric_progress - lyric_width / 2;
+							if (lrc_start > WcharStrHalfWidthLen(lyric_text.c_str()) - lyric_width) lrc_start = WcharStrHalfWidthLen(lyric_text.c_str()) - lyric_width;
+							lrc_start_half_width = lrc_start;
+							//此时得到的lrc_start是以半角字符为单位，下面一行代码用于计算实际lrc_start的值
+							//用lrc_start减去lrc_start位置前面的全角字符数
+							lrc_start = lrc_start - FullWidthCount(lyric_text.c_str(), lrc_start);
+						}
+						if (lrc_start < 0) lrc_start = 0;
+						temp = lyric_text.substr(lrc_start, lyric_width);
+						PrintWString(temp.c_str(), lyric_x, y + display_line + 1, lyric_width, lyric_progress - lrc_start_half_width, CYAN, DARK_CYAN);
 					}
-					if (lrc_start < 0) lrc_start = 0;
-					temp = lyric_text.substr(lrc_start, lyric_width);
-					PrintWString(temp.c_str(), lyric_x, y + lyric_hight / 2 + i, lyric_width, lyric_progress - lrc_start_half_width, CYAN, DARK_CYAN);
+					current_lyric_found = true;
 				}
+				else {
+					// 非当前歌词：暗色显示
+					if (lyric_change_flag || force_refresh)            //不是当前歌词只有当前歌词变化了或参数要求强制刷新时才刷新，以避免反复刷新歌词，减少闪烁
+						PrintWString(lyric_text.c_str(), lyric_x, y + display_line + 1, lyric_width, DARK_CYAN);
+				}
+
+				display_line++;
+			}
+
+			// 显示歌词翻译（如果有）
+			if (!lyric_translate.empty() && display_line < max_lines) {
+				lyric_x = lyric_width / 2 - WcharStrHalfWidthLen(lyric_translate.c_str()) / 2;
+				if (lyric_x < 0) lyric_x = 0;
+
+				Color color = is_current_lyric ? CYAN : DARK_CYAN;
+				if (lyric_change_flag || force_refresh || is_current_lyric) {
+					PrintWString(lyric_translate.c_str(), lyric_x, y + display_line + 1, lyric_width, color);
+				}
+
+				display_line++;
+			}
+
+			// 检查是否已经显示到当前歌词（用于居中显示）
+			if (is_current_lyric && !current_lyric_found) {
+				current_lyric_found = true;
 			}
 		}
 	}
 	else
 		PrintWString(L"当前歌曲没有歌词", lyric_width / 2 - 8, y + lyric_hight / 2, DARK_CYAN);
 }
-
 
 void CPlayer::SwitchPlaylist(int operation)
 {
